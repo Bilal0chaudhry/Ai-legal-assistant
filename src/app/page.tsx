@@ -326,8 +326,9 @@ export default function LegallyEasyPage() {
 
       <footer className="mt-12 text-center text-sm text-muted-foreground">
         <p>&copy; {new Date().getFullYear()} Legally Easy. All rights reserved.</p>
-        <p>Powered by AI, designed for clarity.</p>
+        <p>Powered by Team AURA, designed for clarity.</p>
       </footer>
     </div>
   );
 }
+
