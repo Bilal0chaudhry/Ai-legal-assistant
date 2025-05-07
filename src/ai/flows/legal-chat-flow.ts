@@ -1,9 +1,9 @@
 
 'use server';
 /**
- * @fileOverview A legal chat AI agent.
+ * @fileOverview A legal chat AI agent that can use a document for context.
  *
- * - legalChat - A function that handles legal chat queries.
+ * - legalChat - A function that handles legal chat queries, optionally with a document.
  * - LegalChatInput - The input type for the legalChat function.
  * - LegalChatOutput - The return type for the legalChat function.
  */
@@ -13,8 +13,16 @@ import {z} from 'genkit';
 
 const LegalChatInputSchema = z.object({
   query: z.string().describe("The user's legal question."),
-  // Optional: Consider adding chat history for context in future versions
-  // history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).optional(),
+  documentDataUri: z
+    .string()
+    .optional()
+    .describe(
+      "An optional document file, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
+    ),
+  documentName: z
+    .string()
+    .optional()
+    .describe("The name of the uploaded document, e.g., 'contract.pdf'."),
 });
 export type LegalChatInput = z.infer<typeof LegalChatInputSchema>;
 
@@ -35,7 +43,13 @@ const prompt = ai.definePrompt({
 
 IMPORTANT: Always begin your response by stating: "As LegallyEasy AI, I can provide information, but this is not legal advice. For specific legal issues, please consult a qualified legal professional."
 
-Then, address the user's question: {{{query}}}`,
+{{#if documentDataUri}}
+The user has provided the following document named '{{documentName}}' for reference. Use its content to inform your answer to the user's query.
+Document Content:
+{{media url=documentDataUri}}
+{{/if}}
+
+Please address the user's question based on the information provided (if any document was attached) and your general legal knowledge: {{{query}}}`,
 });
 
 const legalChatFlow = ai.defineFlow(
@@ -49,4 +63,3 @@ const legalChatFlow = ai.defineFlow(
     return output!;
   }
 );
-

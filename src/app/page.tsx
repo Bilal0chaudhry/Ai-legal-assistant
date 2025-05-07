@@ -10,7 +10,10 @@ import {
   User,
   Bot,
   Send,
-  AlertTriangle
+  AlertTriangle,
+  Paperclip,
+  FileText,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,7 +22,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { legalChat, type LegalChatOutput } from '@/ai/flows/legal-chat-flow';
+import { legalChat, type LegalChatInput } from '@/ai/flows/legal-chat-flow'; // LegalChatOutput removed as it's not directly used here
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -29,6 +32,9 @@ interface ChatMessage {
   content: string;
 }
 
+const MAX_FILE_SIZE_MB = 5;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
 export default function LegallyEasyPage() {
   // Chat State
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -37,7 +43,55 @@ export default function LegallyEasyPage() {
   const [chatError, setChatError] = useState<string | null>(null);
   const chatScrollAreaRef = useRef<HTMLDivElement>(null);
 
+  // Document State
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [documentDataUri, setDocumentDataUri] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+
   const { toast } = useToast();
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        toast({ 
+          title: "File too large", 
+          description: `Please select a file smaller than ${MAX_FILE_SIZE_MB}MB.`, 
+          variant: "destructive" 
+        });
+        setSelectedFile(null);
+        setDocumentDataUri(null);
+        if(fileInputRef.current) fileInputRef.current.value = ""; // Reset file input
+        return;
+      }
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setDocumentDataUri(reader.result as string);
+        toast({ title: "Document Attached", description: `${file.name} is ready to be used as reference.` });
+      };
+      reader.onerror = () => {
+        toast({ title: "File Read Error", description: "Could not read the selected file.", variant: "destructive" });
+        setSelectedFile(null);
+        setDocumentDataUri(null);
+        if(fileInputRef.current) fileInputRef.current.value = "";
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setSelectedFile(null);
+      setDocumentDataUri(null);
+    }
+  };
+
+  const clearSelectedFile = () => {
+    setSelectedFile(null);
+    setDocumentDataUri(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""; 
+    }
+    toast({ title: "Document Removed", description: "The attached document reference has been cleared." });
+  };
 
   // Chat Logic
   const handleChatSubmit = async () => {
@@ -62,7 +116,15 @@ export default function LegallyEasyPage() {
 
     startChatTransition(async () => {
       try {
-        const result = await legalChat({ query: newUserMessage.content });
+        const chatInput: LegalChatInput = { 
+          query: newUserMessage.content,
+        };
+        if (documentDataUri && selectedFile) {
+          chatInput.documentDataUri = documentDataUri;
+          chatInput.documentName = selectedFile.name;
+        }
+
+        const result = await legalChat(chatInput);
         const aiResponse: ChatMessage = {
           id: crypto.randomUUID(),
           role: 'assistant',
@@ -95,14 +157,11 @@ export default function LegallyEasyPage() {
   };
 
   useEffect(() => {
-    // Auto-scroll for chat messages
     if (chatScrollAreaRef.current) {
-      // Attempt to find the viewport element within the ScrollArea
       const scrollViewport = chatScrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]');
       if (scrollViewport) {
         scrollViewport.scrollTop = scrollViewport.scrollHeight;
       } else {
-        // Fallback if Radix viewport selector not found (e.g. if ScrollArea structure changes)
         chatScrollAreaRef.current.scrollTop = chatScrollAreaRef.current.scrollHeight;
       }
     }
@@ -119,7 +178,7 @@ export default function LegallyEasyPage() {
           </h1>
         </div>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Your AI legal assistant for legal queries.
+          Your AI legal assistant for legal queries. Attach documents for contextual help.
         </p>
       </header>
 
@@ -139,7 +198,7 @@ export default function LegallyEasyPage() {
                   <div>
                     <CardTitle className="text-2xl font-semibold text-primary">Legal Chat Assistant</CardTitle>
                     <CardDescription className="text-muted-foreground">
-                      Ask your legal questions. Please note this is not legal advice.
+                      Ask your legal questions. Optionally, attach a document for reference. This is not legal advice.
                     </CardDescription>
                   </div>
                 </div>
@@ -190,8 +249,45 @@ export default function LegallyEasyPage() {
                   </div>
                 </ScrollArea>
               </CardContent>
-              <CardFooter className="border-t p-6 bg-card-foreground/5">
+              <CardFooter className="border-t p-6 bg-card-foreground/5 flex flex-col space-y-3">
+                {selectedFile && (
+                  <div className="flex items-center justify-between w-full p-2 bg-muted rounded-md text-sm shadow">
+                    <div className="flex items-center space-x-2 truncate">
+                      <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-muted-foreground truncate" title={selectedFile.name}>{selectedFile.name}</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive flex-shrink-0"
+                      onClick={clearSelectedFile}
+                      disabled={isChatPending}
+                      aria-label="Remove attached document"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
                 <div className="flex w-full items-center space-x-3">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="hidden"
+                    accept=".pdf,.txt,.doc,.docx,.md,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown"
+                    aria-label="Attach document file input"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isChatPending}
+                    aria-label="Attach document button"
+                    className="border-primary/50 text-primary hover:bg-primary/10"
+                    title="Attach Document"
+                  >
+                    <Paperclip className="h-5 w-5" />
+                  </Button>
                   <Input
                     type="text"
                     placeholder="Type your legal question here..."
@@ -204,7 +300,7 @@ export default function LegallyEasyPage() {
                   />
                   <Button 
                     onClick={handleChatSubmit} 
-                    disabled={isChatPending || !currentUserQuery.trim()}
+                    disabled={isChatPending || (!currentUserQuery.trim() && !selectedFile)} // Disable if no query and no file
                     className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg shadow-md"
                     aria-label="Send chat message"
                   >
