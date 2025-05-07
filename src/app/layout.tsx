@@ -10,7 +10,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: 'Legally Easy',
-  description: 'AI Legal Assistant for Document Summarization',
+  description: 'AI Legal Assistant for Legal Queries',
 };
 
 export default function RootLayout({
